@@ -37,7 +37,9 @@ esp32:
 
 # Enable logging
 logger: 
-  level: DEBUG
+  level: debug
+  logs:
+    sht3xd.component: info
 
 # Enable Home Assistant API
 api:
@@ -87,6 +89,7 @@ number:
     max_value: 100
     step: 1
     optimistic: true
+    unit_of_measurement: "%"
     set_action:
       then:
         - output.set_level:
@@ -110,14 +113,18 @@ sensor:
       name: "Apple Internal Temperature"
       id: sht30t
       internal: false
+      accuracy_decimals: 1
       filters: 
         - lambda: return x * (9.0/5.0) + 32.0;
+#        - sliding_window_moving_average:
+#            window_size: 5
+#            send_every: 5
       unit_of_measurement: "°F"
-      on_value:
-        then:
-          - logger.log: "testing..."
+#      on_value:
+#        then:
+#          - logger.log: "testing..."
       on_value_range:
-        - above: 72.0
+        - above: 74.0
           then:
             - logger.log: "Set fan level 100 over 72"
             - number.set:
@@ -126,6 +133,16 @@ sensor:
             - output.set_level:
                 id: apple_pwm_speed
                 level: 100%
+        - above: 72.0
+          below: 74
+          then:
+            - logger.log: "Set fan level 66 for above 68 below 72"
+            - number.set:
+                id: slider
+                value: 66
+            - output.set_level:
+                id: apple_pwm_speed
+                level: 75%
         - above: 68.0
           below: 72
           then:
@@ -170,6 +187,11 @@ sensor:
       name: "Apple Internal Humidity"
       id: sht30h
       internal: false
+      accuracy_decimals: 0
+      filters: 
+        - sliding_window_moving_average:
+            window_size: 15
+            send_every: 15
     address: 0x44
     update_interval: 30s
 
@@ -184,8 +206,12 @@ sensor:
     id: fan_pulse
     unit_of_measurement: 'RPM'
     internal: false
+    accuracy_decimals: 0
     filters:
       - multiply: 0.5
+      - sliding_window_moving_average:
+            window_size: 5
+            send_every: 5
     count_mode:
       rising_edge: INCREMENT
       falling_edge: DISABLE
