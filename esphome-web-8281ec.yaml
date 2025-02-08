@@ -8,7 +8,7 @@ substitutions:
   esphome_project_version: "apple-fan-v.1"
 
 esphome:
-  name: apple-fan
+  name: "apple-fan"
   friendly_name: Apple Fan Controller
   name_add_mac_suffix: false
   project:
@@ -71,9 +71,23 @@ status_led:
      inverted: false
 
 i2c:
-  sda: GPIO21
-  scl: GPIO22
-  frequency: 100kHz
+  - id: bus_a
+    sda: GPIO21
+    scl: GPIO22
+    scan: true
+    frequency: 100kHz
+  - id: bus_b
+    sda: GPIO16
+    scl: GPIO17
+    scan: true
+    frequency: 100kHz
+
+#display:
+#  - platform: lcd_pcf8574
+#    id: mydisplay
+#    dimensions: 16x2
+#    i2c_id: bus_b
+#    address: 0x27
 
 output:
   - platform: ledc
@@ -139,7 +153,7 @@ sensor:
             - logger.log: "Set fan level 66 for above 68 below 72"
             - number.set:
                 id: slider
-                value: 66
+                value: 75
             - output.set_level:
                 id: apple_pwm_speed
                 level: 75%
@@ -192,6 +206,7 @@ sensor:
         - sliding_window_moving_average:
             window_size: 15
             send_every: 15
+    i2c_id: bus_a
     address: 0x44
     update_interval: 30s
 
@@ -206,12 +221,12 @@ sensor:
     id: fan_pulse
     unit_of_measurement: 'RPM'
     internal: false
-    accuracy_decimals: 0
+    accuracy_decimals: 1
     filters:
       - multiply: 0.5
-      - sliding_window_moving_average:
-            window_size: 5
-            send_every: 5
+#      - sliding_window_moving_average:
+#            window_size: 5
+#            send_every: 5
     count_mode:
       rising_edge: INCREMENT
       falling_edge: DISABLE
