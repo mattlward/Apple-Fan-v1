@@ -27,7 +27,7 @@ esphome:
             - delay: 1s
             - output.set_level:
                 id: apple_pwm_speed
-                level: .25 # 100% pwm speed until temp is taken
+                level: 1.0 # 100% pwm speed until temp is taken
   
 
 esp32:
@@ -130,9 +130,6 @@ sensor:
       accuracy_decimals: 1
       filters: 
         - lambda: return x * (9.0/5.0) + 32.0;
-#        - sliding_window_moving_average:
-#            window_size: 5
-#            send_every: 5
       unit_of_measurement: "°F"
 #      on_value:
 #        then:
@@ -208,7 +205,7 @@ sensor:
             send_every: 15
     i2c_id: bus_a
     address: 0x44
-    update_interval: 30s
+    update_interval: 15s
 
   # Fan Speed
   - platform: pulse_counter
@@ -224,9 +221,6 @@ sensor:
     accuracy_decimals: 1
     filters:
       - multiply: 0.5
-#      - sliding_window_moving_average:
-#            window_size: 5
-#            send_every: 5
     count_mode:
       rising_edge: INCREMENT
       falling_edge: DISABLE
