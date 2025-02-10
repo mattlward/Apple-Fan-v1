@@ -8,9 +8,9 @@ substitutions:
   esphome_project_version: "apple-fan-v.1"
 
 esphome:
-  name: "apple-fan"
+  name: $name
   friendly_name: Apple Fan Controller
-  name_add_mac_suffix: false
+  name_add_mac_suffix: true
   project:
     name: $esphome_project_name
     version: $esphome_project_version
@@ -59,7 +59,7 @@ wifi:
     password: "12345678"
 
 dashboard_import:
-  package_import_url: github://esphome/example-configs/esphome-web/esp32.yaml@main
+  package_import_url: github://mattlward/Apple-Fan-v1/esphome-web-8281ec.yaml@main
   import_full_config: true
 
 web_server:
@@ -80,14 +80,24 @@ i2c:
     sda: GPIO16
     scl: GPIO17
     scan: true
-    frequency: 100kHz
+    frequency: 400kHz
 
-#display:
-#  - platform: lcd_pcf8574
-#    id: mydisplay
-#    dimensions: 16x2
-#    i2c_id: bus_b
-#    address: 0x27
+display:
+  - platform: lcd_pcf8574
+    id: mydisplay
+    dimensions: 16x2
+    i2c_id: bus_b
+    address: 0x27
+    lambda: |-
+      //Print sensor temperature, spd % and RPM on line 0
+      it.printf(0,0,"%.0fF", id(sht30t).state);
+      it.printf(4,0,"%.0f%%", id(slider).state);
+      it.printf(9,0,"%.0fRPM", id(fan_pulse).state);
+      //Print time on line 1
+      it.strftime(1,1,"%I:%M%p  %m/%d", id(my_time).now());
+
+
+
 
 output:
   - platform: ledc
@@ -252,6 +262,16 @@ sensor:
                 (minutes ? to_string(minutes) + "m " : "") +
                 (to_string(seconds) + "s")
               ).c_str();
+time:
+#  - platform: homeassistant
+#    id: my_time
+  - platform: sntp
+    id: my_time
+    timezone: UTC
+    servers:
+     - 0.pool.ntp.org
+     - 1.pool.ntp.org
+     - 2.pool.ntp.org
 switch:
   - platform: restart
     name: "Restart"
