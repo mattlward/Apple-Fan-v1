@@ -15,7 +15,6 @@ esphome:
     name: $esphome_project_name
     version: $esphome_project_version
   on_boot:
-# Power up fan at boot
     priority: 800
     then:
     - if:
@@ -23,22 +22,22 @@ esphome:
           api.connected:
         then:
         - logger.log: API is connected! Now we can trigger what we want!
-#        else:
-#        - delay: 1s
-#        - output.set_level:
-#            id: apple_pwm_speed
-#            level: 1.0     # 100% pwm speed until temp is taken
 
 esp32:
   board: esp32dev
   framework:
     type: esp-idf
 
+# Prevent linking error during compile for adc component
+external_components:
+  - source: github://pr#7942
+    refresh: 30s
+    components:
+      - adc
+
 # Enable logging
 logger:
   level: debug
-  logs:
-    sht3xd.component: info
 
 # Enable Home Assistant API
 api:
@@ -63,6 +62,7 @@ dashboard_import:
 
 web_server:
   include_internal: true
+  version: 3
 
 status_led:
   pin:
@@ -70,6 +70,7 @@ status_led:
     inverted: false
 
 i2c:
+# Define both I2C buses
 - id: bus_a
   sda: GPIO21
   scl: GPIO22
@@ -91,7 +92,8 @@ display:
     //Print sensor temperature, spd % and RPM on line 0
     it.printf(0,0,"%.0fF", id(sht30t).state);
     it.printf(4,0,"%.0f%%", id(slider).state);
-    it.printf(9,0,"%.0fRPM", id(fan_pulse).state);
+    //it.printf(4,0,"%.0fRPM", id(fan_pulse).state);
+    it.printf(9,0,"+%.3fV", id(ps5v).state);
     it.printf(0, 1, "%s", id(addr).state.c_str());
     if (id(apple_backlight).state) {
     // Binary sensor is on
@@ -109,16 +111,22 @@ display:
 
 
 output:
+# PWM output to level shifter for 5v fan
+# Do not lower frequency may cause audible buzz
 - platform: ledc
   id: apple_pwm_speed
   pin: GPIO27
   frequency: 25000Hz
 
 number:
+# Creates manual fan speed slider, will not hold as the percentage is automatically controlled
 - platform: template
   name: Pwm Fan Slider
   id: slider
-  internal: false
+  mode: auto
+  internal: true
+  web_server:
+      sorting_weight: 6
   min_value: 15
   max_value: 100
   step: 1
@@ -130,29 +138,19 @@ number:
         id: apple_pwm_speed
         level: !lambda "return x/100;"
 
-text_sensor:
-  # Expose WiFi information as sensors.
-- platform: wifi_info
-  ip_address:
-    name: IP address
-    id: addr
-  ssid:
-    name: SSID
-    id: ssid
-  mac_address:
-    name: ESP Mac Wifi Address
 
-  # Send Uptime in raw seconds                                                                                                                                                                                                           
-- platform: template
-  name: $friendly_name Uptime
-  id: uptime_human
-  icon: mdi:clock-start
+
+# Onboard sensors  
 sensor:
+# T&H sensor data
 - platform: sht3xd
   temperature:
     name: Apple Internal Temperature
     id: sht30t
     internal: false
+    icon: mdi:temperature-fahrenheit
+    web_server:
+      sorting_weight: 1
     accuracy_decimals: 1
     filters:
       - lambda: return x * (9.0/5.0) + 32.0;
@@ -208,6 +206,9 @@ sensor:
     id: sht30h
     internal: false
     accuracy_decimals: 0
+    icon: "mdi:water-percent"
+    web_server:
+      sorting_weight: 2
     filters:
     - sliding_window_moving_average:
         window_size: 15
@@ -216,9 +217,8 @@ sensor:
   address: 0x44
   update_interval: 5s
 
-
-
 # Fan Speed
+# Read raw pulse count on input and convert to RPM, 0.5 multiplier for Noctua fan 2 pulse per revolution
 - platform: pulse_counter
   pin:
     number: GPIO25
@@ -229,26 +229,56 @@ sensor:
   id: fan_pulse
   unit_of_measurement: RPM
   internal: false
-  accuracy_decimals: 1
+  icon: mdi:fan-auto
+  web_server:
+    sorting_weight: 3
+  accuracy_decimals: 0
   filters:
   - multiply: 0.5
   count_mode:
     rising_edge: INCREMENT
     falling_edge: DISABLE
   update_interval: 3s
-   # Send WiFi signal strength & uptime to HA                                                                                                                                                                                             
+  
+# Measure +5v rail
+# 5vdc rail +/- about .06v, occasional noise spikes
+- platform: adc
+  id: ps5v
+  pin: GPIO36
+  name: "PS5v"
+  update_interval: 15s
+  internal: false
+  icon: mdi:current-dc
+  web_server:
+    sorting_weight: 4
+  attenuation: 12db
+  samples: 2
+  accuracy_decimals: 3
+  filters:
+    - multiply: 1.824
+
+# Collect WiFi info & statistics for HA                                                                                                                                                                                            
 - platform: wifi_signal
   name: $friendly_name WiFi Strength
   update_interval: 60s
+  web_server:
+    sorting_weight: 25
+  entity_category: "diagnostic"
+
+# Gather raw uptime and convert to human readable format
 - platform: uptime
   name: $friendly_name Uptime
   id: uptime_sensor
+  entity_category: "diagnostic"
+  web_server:
+    sorting_weight: 30
   update_interval: 60s
+  internal: true
   on_raw_value:
     then:
     - text_sensor.template.publish:
         id: uptime_human
-            # Custom C++ code to generate the result                                                                                                                                                                                     
+      # Custom C++ code to generate human readable uptime                                                                                                                                                                                   
         state: !lambda |-
           int seconds = round(id(uptime_sensor).raw_state);
           int days = seconds / (24 * 3600);                                                                                                                                                                                          
@@ -264,24 +294,50 @@ sensor:
             (to_string(seconds) + "s")
           ).c_str();
 
+text_sensor:
+# Expose WiFi information as sensors.
+- platform: wifi_info
+  ip_address:
+    name: IP address
+    id: addr
+    icon: mdi:ip
+    web_server:
+      sorting_weight: 10
+  ssid:
+    name: SSID
+    id: ssid
+    web_server:
+      sorting_weight: 20
+  mac_address:
+    name: ESP Mac Wifi Address
+    web_server:
+      sorting_weight: 15
+
+# Send Uptime in human readable format                                                                                                                                                                                                         
+- platform: template
+  name: $friendly_name Uptime HR
+  id: uptime_human
+  internal: false
+  entity_category: "diagnostic"
+  web_server:
+      sorting_weight: 1
+  icon: mdi:clock-start
+
+# Allow HA to control LCD backlight
 binary_sensor:
   - platform: homeassistant
     id: apple_backlight
     entity_id: input_boolean.esphome_apple_backlight
     internal: false
+    web_server:
+      sorting_weight: 7
 
+# Acquire locat time if HA is operational
 time:
   - platform: homeassistant
     id: my_time
-#- platform: sntp
-#  id: my_time
-#  timezone: UTC
-#  servers:
-#  - 0.pool.ntp.org
-#  - 1.pool.ntp.org
-#  - 2.pool.ntp.org
 
-
+# Provide reboot control for HA and ESP interfaces
 switch:
 - platform: restart
   name: Restart
